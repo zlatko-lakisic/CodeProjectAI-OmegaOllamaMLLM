@@ -1,0 +1,9 @@
+{
+  "Modules": {
+    "OmegaOllamaMultiModalLLM": {
+      "LaunchSettings": {
+        "Runtime": "python3.10"
+      }
+    }
+  }
+}

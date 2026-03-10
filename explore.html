@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<!--
+CODEPROJECT.AI SERVER MODULE EXPLORER
+
+This page provides the means to test this module using the same infrastructure as
+the CodeProject.AI Server explorer. This page also provides the UI elements that
+the explorer will parse and use to build up the UI of the main explorer itself.
+
+RULES AND CONVENTIONS
+
+1. This page should provide sufficient functionality to test and explore this
+   module.
+
+2. This page should use the functionality in the explorer.js file so that when
+   the elements of this page are inserted into the main explorer, it all works
+   seamlessly. We use:
+   - clearImagePreview, previewImage (or showPreviewImage), submitRequest, setResultsHtml.
+
+3. Sections are bounded by START EXPLORER MARKUP/SCRIPT/STYLE and END EXPLORER *.
+
+4. Standard output elements: DIV id 'results', IMG id 'imgPreview', DIV id 'imgMask'.
+
+5. Use _MID_ in element ids and function names for uniqueness when embedded.
+-->
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ollama MultiModal LLM by OmegaIT – Explorer</title>
+
+    <link id="bootstrapCss" rel="stylesheet" type="text/css" href="/assets/bootstrap-dark.min.css">
+    <link rel="stylesheet" type="text/css" href="/assets/server.css">
+    <script type="text/javascript" src="/assets/server.js"></script>
+    <script type="text/javascript" src="/assets/explorer.js"></script>
+
+    <style>
+/* START EXPLORER STYLE */
+.explorer-module-test input[type="text"] { width: 100%; max-width: 360px; }
+/* END EXPLORER STYLE */
+    </style>
+</head>
+<body class="dark-mode">
+<div class="mx-auto" style="max-width: 800px;">
+    <h2 class="mb-3">Ollama MultiModal LLM by OmegaIT</h2>
+    <p class="text-muted">Describe an image or video, or ask a question about it. Video: frames are sampled and then summarized.</p>
+    <form method="post" action="" enctype="multipart/form-data" id="myform">
+
+<!-- START EXPLORER MARKUP -->
+        <div class="form-group row">
+            <label class="col-form-label col-2">Image / Video</label>
+            <input id="_MID_image" class="col form-control btn-light" type="file"
+                   accept="image/*,video/mp4,video/webm,video/quicktime,video/x-msvideo,video/x-matroska,.mp4,.webm,.mov,.avi,.mkv"
+                   style="width:17rem"
+                   onchange="typeof _MID_updatePreview === 'function' && _MID_updatePreview(this); if (typeof previewImage !== 'undefined' && this.files && this.files[0]) { var f = this.files[0]; var isImg = f.type.indexOf('image/') === 0; if (isImg) previewImage(this); } return true" />
+        </div>
+        <div class="form-group row">
+            <label class="col-form-label col-2">Prompt (optional)</label>
+            <input id="_MID_prompt" class="col form-control" type="text" placeholder="Describe this image or video (optional)."
+                   style="width:17rem" />
+        </div>
+        <div class="form-group row">
+            <label class="col-form-label col-2"></label>
+            <input id="_MID_describe_btn" class="form-control btn-success" type="button" value="Describe"
+                   style="width:11rem" onclick="typeof _MID_onDescribe === 'function' && _MID_onDescribe(_MID_image, _MID_prompt)" />
+        </div>
+<!-- END EXPLORER MARKUP -->
+
+        <div class="w-100 position-relative form-control my-4 p-0">
+            <div id="imgMask" class="position-absolute" style="left:0;top:0;pointer-events:none;z-index:10"></div>
+            <img src="" id="imgPreview" class="w-100" style="height:250px;visibility:hidden;object-fit:contain" alt="Preview" />
+            <video id="videoPreview" class="w-100" style="height:250px;display:none;object-fit:contain" controls muted preload="metadata" alt="Video preview"></video>
+        </div>
+        <div>
+            <h5>Results</h5>
+            <div id="results" name="results" class="bg-light p-3 text-dark" style="min-height: 100px;"></div>
+        </div>
+    </form>
+</div>
+
+<script type="text/javascript">
+// START EXPLORER SCRIPT
+function _MID_updatePreview(fileInput) {
+    var imgEl = document.getElementById('imgPreview');
+    var videoEl = document.getElementById('videoPreview');
+    if (videoEl && videoEl.src && videoEl.src.indexOf('blob:') === 0) {
+        URL.revokeObjectURL(videoEl.src);
+    }
+    if (imgEl && imgEl.src && imgEl.src.indexOf('blob:') === 0) {
+        URL.revokeObjectURL(imgEl.src);
+    }
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        if (imgEl) { imgEl.style.display = 'none'; imgEl.style.visibility = 'hidden'; imgEl.src = ''; }
+        if (videoEl) { videoEl.style.display = 'none'; videoEl.src = ''; }
+        return;
+    }
+    var file = fileInput.files[0];
+    var isVideo = file.type.indexOf('video/') === 0 || /\.(mp4|webm|mov|avi|mkv)$/i.test(file.name || '');
+    if (isVideo && videoEl) {
+        if (imgEl) { imgEl.style.display = 'none'; imgEl.style.visibility = 'hidden'; imgEl.src = ''; }
+        videoEl.style.display = 'block';
+        videoEl.src = URL.createObjectURL(file);
+    } else if (imgEl) {
+        if (videoEl) { videoEl.style.display = 'none'; videoEl.src = ''; }
+        imgEl.style.display = 'block';
+        imgEl.style.visibility = 'visible';
+        if (file.type.indexOf('image/') === 0) {
+            imgEl.src = URL.createObjectURL(file);
+        }
+    }
+}
+
+async function _MID_onDescribe(fileInput, promptInput) {
+    var resultsDiv = document.getElementById('results');
+    var setResult = function(html) {
+        if (typeof setResultsHtml === 'function') setResultsHtml(html);
+        else if (resultsDiv) resultsDiv.textContent = html;
+    };
+    if (typeof clearImagePreview === 'function') clearImagePreview();
+    _MID_updatePreview(fileInput);
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        setResult("Please select an image or video file.");
+        return;
+    }
+    var prompt = (promptInput && promptInput.value) ? promptInput.value.trim() : "";
+    var file = fileInput.files[0];
+    var isVideo = file.type.indexOf('video/') === 0 || /\.(mp4|webm|mov|avi|mkv)$/i.test(file.name || '');
+    if (typeof showPreviewImage === 'function' && !isVideo) showPreviewImage(file);
+    setResult(isVideo ? "Sending video (may take a minute or two)..." : "Sending request...");
+
+    var formData = new FormData();
+    var apiPath = isVideo ? '/vision/omega-ollama/describe-video' : '/vision/omega-ollama/describe-image';
+    formData.append(isVideo ? 'video' : 'image', file);
+    if (prompt) formData.append('prompt', prompt);
+    var baseUrl = (typeof serverBaseUrl !== 'undefined') ? serverBaseUrl : (window.location.origin + '/v1');
+    var timeoutMs = isVideo ? 300000 : 60000;
+    var controller = new AbortController();
+    var timeoutId = setTimeout(function() { controller.abort(); }, timeoutMs);
+    try {
+        var resp = await fetch(baseUrl + apiPath, { method: 'POST', body: formData, signal: controller.signal });
+        clearTimeout(timeoutId);
+        var data = await resp.json();
+        if (data && data.success) {
+            setResult(data.description != null ? String(data.description) : "(No description returned)");
+        } else {
+            var errMsg = (data && data.error) ? data.error : (data && data.message ? data.message : "HTTP " + resp.status);
+            setResult("Error: " + (typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg)));
+        }
+    } catch (e) {
+        clearTimeout(timeoutId);
+        setResult("Request failed: " + (e.name === 'AbortError' ? "Request timed out." : e.message));
+    }
+}
+// END EXPLORER SCRIPT
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+#! Python3.8
+
+
+ollama                          # Installing the ollama framework
+Pillow                          # Installing the Pillow framework
+opencv-python-headless           # Video frame extraction for multimodal (image + video)
+
+CodeProject-AI-SDK              # Installing the CodeProject.AI SDK
+
+# last line empty.
