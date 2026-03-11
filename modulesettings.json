@@ -26,7 +26,6 @@
 
       "EnvironmentVariables": {
         "OLLAMA_VISION_MODEL": "moondream",
-        "OLLAMA_SUMMARY_MODEL": "llama3.2",
         "OLLAMA_VIDEO_INTERVAL_SEC": "8",
         "OLLAMA_VIDEO_MAX_FRAMES": "4"
       },

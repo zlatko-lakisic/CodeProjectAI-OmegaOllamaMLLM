@@ -11,7 +11,7 @@ Plugin for [CodeProject.AI Server](https://www.codeproject.com/ai/) that uses **
 - **Ollama** installed and running on the same machine (or reachable at `OLLAMA_HOST`).  
   - Install from [ollama.com](https://ollama.com).
 - The **moondream** model pulled in Ollama (the installer can do this automatically if Ollama is in PATH).  
-  For **video** support, a text model (e.g. **llama3.2**) is also used to summarize frame descriptions; run `ollama pull llama3.2` if you use video.
+  For **video**, the same vision model is used to describe frames and to summarize; no second model is required. Optionally set **OLLAMA_SUMMARY_MODEL** to a different model (e.g. `llama3.2`) and run `ollama pull llama3.2` if you prefer a separate summary model.
 
 ## Installation
 
@@ -94,7 +94,7 @@ curl -X POST "http://localhost:32168/v1/vision/omega-ollama/describe-video" \
 
 - **Vision model (dashboard):** In the module’s configuration in the CodeProject.AI dashboard, use the **Vision model** menu to choose which Ollama vision model to use. Default is **Moondream** (small, fast). Options include LLaVA 7B/13B/34B, Llama 3.2 Vision 11B/90B, and others. Ensure the chosen model is pulled (`ollama pull <model>`).
 - **Environment variable:** `OLLAMA_VISION_MODEL` – Ollama vision model name (default: `moondream`). Set in the module’s environment or in `modulesettings.json` under `EnvironmentVariables`; the dashboard menu overrides this when set.
-- **OLLAMA_SUMMARY_MODEL** – Text model used to summarize video frame descriptions (default: `llama3.2`). Pull with `ollama pull llama3.2` (or another model) for video support.
+- **OLLAMA_SUMMARY_MODEL** – Optional. Model used to summarize video frame descriptions into one text. If unset, the **vision model** (e.g. Moondream) is used for both describing frames and summarizing, so one model is enough. Set to e.g. `llama3.2` and run `ollama pull llama3.2` if you want a separate summary model.
 - **OLLAMA_VIDEO_INTERVAL_SEC** – For video: sample one frame every N seconds (default: `5`). Larger values = fewer frames and faster requests.
 - **OLLAMA_VIDEO_MAX_FRAMES** – Maximum number of frames to analyze per video (default: `6`). Keep low so the request finishes within the server’s HTTP timeout (e.g. 4–6 frames).
 

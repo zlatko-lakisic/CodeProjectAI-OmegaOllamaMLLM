@@ -95,12 +95,19 @@ fi
 
 writeLine "  [OK] Ollama is running." "green"
 
-# 3. Pull moondream model if not already present
-writeLine "Pulling Ollama model: moondream (this may take a few minutes)..." "cyan"
+# 3. Pull required Ollama models
+writeLine "Pulling Ollama model: moondream (vision, for images)..." "cyan"
 if ollama pull moondream; then
   writeLine "Moondream model ready." "green"
 else
   writeLine "Could not pull moondream. Run 'ollama pull moondream' manually." "yellow"
+fi
+
+writeLine "Pulling Ollama model: llama3.2 (for video summary)..." "cyan"
+if ollama pull llama3.2; then
+  writeLine "Llama3.2 model ready (video analysis)." "green"
+else
+  writeLine "Could not pull llama3.2. For video analysis run 'ollama pull llama3.2' manually." "yellow"
 fi
 
 # 4. Ensure Python dependencies are installed in the module venv (codeproject_ai_sdk, ollama, etc.)

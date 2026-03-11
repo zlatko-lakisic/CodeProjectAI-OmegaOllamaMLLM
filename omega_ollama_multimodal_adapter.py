@@ -124,7 +124,8 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
 
     def initialise(self):
         self.model_name = ModuleOptions.getEnvVariable("OLLAMA_VISION_MODEL", "moondream")
-        self.summary_model = ModuleOptions.getEnvVariable("OLLAMA_SUMMARY_MODEL", "llama3.2")
+        # Default: use same model for video summary (no second model needed). Override with OLLAMA_SUMMARY_MODEL if desired.
+        self.summary_model = ModuleOptions.getEnvVariable("OLLAMA_SUMMARY_MODEL", "").strip() or self.model_name
         # Keep defaults low so describe-video finishes within typical server request timeout (~60–120s)
         self.video_interval_sec = float(ModuleOptions.getEnvVariable("OLLAMA_VIDEO_INTERVAL_SEC", "5"))
         self.video_max_frames = int(ModuleOptions.getEnvVariable("OLLAMA_VIDEO_MAX_FRAMES", "6"))
