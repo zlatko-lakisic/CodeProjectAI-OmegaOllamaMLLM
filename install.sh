@@ -118,7 +118,23 @@ if [ -f "$REQUIREMENTS" ]; then
   elif [ -f "$MODULE_DIR/venv/bin/pip" ]; then
     "$MODULE_DIR/venv/bin/pip" install -r "$REQUIREMENTS" && PIP_OK=1
   else
-    python3 -m pip install -r "$REQUIREMENTS" && PIP_OK=1
+    # CodeProject.AI Docker/Linux uses bin/<os>/python<ver>/venv/bin (e.g. bin/ubuntu/python310/venv/bin/pip)
+    VENV_PIP=""
+    for candidate in "$MODULE_DIR/bin/ubuntu/python310/venv/bin/pip" \
+                     "$MODULE_DIR/bin/linux/python310/venv/bin/pip"; do
+      if [ -f "$candidate" ]; then
+        VENV_PIP="$candidate"
+        break
+      fi
+    done
+    if [ -z "$VENV_PIP" ] && [ -d "$MODULE_DIR/bin" ]; then
+      VENV_PIP="$(find "$MODULE_DIR/bin" -path '*/venv/bin/pip' -type f 2>/dev/null | head -1)"
+    fi
+    if [ -n "$VENV_PIP" ] && [ -f "$VENV_PIP" ]; then
+      "$VENV_PIP" install -r "$REQUIREMENTS" && PIP_OK=1
+    else
+      python3 -m pip install -r "$REQUIREMENTS" && PIP_OK=1
+    fi
   fi
   if [ "$PIP_OK" = "1" ]; then
     writeLine "Python dependencies installed." "green"
