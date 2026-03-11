@@ -103,5 +103,29 @@ else
   writeLine "Could not pull moondream. Run 'ollama pull moondream' manually." "yellow"
 fi
 
+# 4. Ensure Python dependencies are installed in the module venv (codeproject_ai_sdk, ollama, etc.)
+MODULE_DIR="$(cd "$(dirname "$0")" && pwd)"
+REQUIREMENTS="$MODULE_DIR/requirements.txt"
+if [ -f "$REQUIREMENTS" ]; then
+  writeLine "Installing Python dependencies (CodeProject.AI SDK, ollama, Pillow, etc.)..." "cyan"
+  PIP_OK=0
+  if [ -n "${venvPythonCmdPath:-}" ] && [ -x "$venvPythonCmdPath" ]; then
+    "$venvPythonCmdPath" -m pip install -r "$REQUIREMENTS" && PIP_OK=1
+  elif [ -n "${virtualEnvDirPath:-}" ] && [ -f "$virtualEnvDirPath/bin/pip" ]; then
+    "$virtualEnvDirPath/bin/pip" install -r "$REQUIREMENTS" && PIP_OK=1
+  elif [ -f "$MODULE_DIR/bin/pip" ]; then
+    "$MODULE_DIR/bin/pip" install -r "$REQUIREMENTS" && PIP_OK=1
+  elif [ -f "$MODULE_DIR/venv/bin/pip" ]; then
+    "$MODULE_DIR/venv/bin/pip" install -r "$REQUIREMENTS" && PIP_OK=1
+  else
+    python3 -m pip install -r "$REQUIREMENTS" && PIP_OK=1
+  fi
+  if [ "$PIP_OK" = "1" ]; then
+    writeLine "Python dependencies installed." "green"
+  else
+    writeLine "Warning: pip install failed. Module may not start until dependencies are installed." "yellow"
+  fi
+fi
+
 writeLine "Ollama MultiModal LLM by OmegaIT module install complete." "green"
 exit 0
