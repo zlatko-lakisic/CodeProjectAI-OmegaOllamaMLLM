@@ -1,15 +1,26 @@
-# Ignore everything in this directory
-*
-# Un-ignore this .gitignore so it is tracked
-!.gitignore
-# Un-ignore existing tracked files (add new exceptions below as you add files)
-!explore.html
-!install.bat
-!install.sh
-!modulesettings.json
-!modulesettings.windows.json
-!OmegaOllamaMultiModalLLM.pyproj
-!omega_ollama_multimodal_adapter.py
-!README.md
-!requirements.txt
-!LICENSE
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.so
+.venv/
+venv/
+env/
+
+# CodeProject.AI module venv / runtime (created by setup)
+bin/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Local / secrets (optional)
+.env
+.env.local
+*.local

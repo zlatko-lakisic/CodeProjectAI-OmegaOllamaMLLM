@@ -66,10 +66,27 @@ If the module is running and Ollama has the moondream model, the self-test shoul
 
 **Module not showing in the dashboard?** Side-loaded modules (like this one) may appear under **Settings** → **Modules**, or in an **Installed** / **Local modules** list rather than in the main “Install modules” catalog. Refresh the page, restart CodeProject.AI Server if needed, and confirm the folder **OmegaOllamaMultiModalLLM** is in the server’s **modules** directory (e.g. `C:\Program Files\CodeProject\AI\modules\`). Then restart the server and refresh the dashboard. The module appears as **Ollama MultiModal LLM by OmegaIT** (OmegaOllamaMultiModalLLM).
 
+## Home Assistant: LLM Vision (HACS)
+
+This module exposes an **OpenAI-compatible** endpoint so [LLM Vision](https://github.com/valentinfrlch/ha-llmvision) can use CodeProject.AI directly—no extra containers or proxy.
+
+1. **Ensure the module is running** (Ollama MultiModal LLM by OmegaIT enabled and started in the CodeProject.AI dashboard).
+
+2. **In Home Assistant:** Settings → Devices & services → LLM Vision → Add Entry (or Reconfigure). Choose **OpenAI** or **Custom OpenAI** (OpenAI-compatible). Set:
+   - **Base URL:** Your CodeProject.AI server URL, **with no path** (e.g. `http://codeproject-ai:32168` or `http://192.168.1.10:32168`). LLM Vision will call `/v1/chat/completions` on that base.
+   - **API key:** Leave empty or use any placeholder (this endpoint does not require a key).
+   - **Model:** Any label (e.g. `omega-ollama`); the module uses your configured vision model.
+
+3. Use this provider in LLM Vision for camera snapshots, Frigate events, etc. Requests go straight to CodeProject.AI’s **Ollama MultiModal LLM** module.
+
+**Endpoint:** `POST /v1/chat/completions` — accepts JSON in OpenAI chat format (e.g. `messages` with `image_url` and text) and returns OpenAI-style `choices` with the vision description.
+
 ## API
 
 - **Image:** `POST /v1/vision/omega-ollama/describe-image`
   - **Inputs:** `image` (file, required), `prompt` (string, optional).
+- **OpenAI-compatible (LLM Vision):** `POST /v1/chat/completions`
+  - **Inputs:** JSON body with `messages` (array with `image_url` + text) and optional `model`. Returns OpenAI-style `choices` with the vision description.
 - **Video:** `POST /v1/vision/omega-ollama/describe-video`
   - **Inputs:** `video` (file, required), `prompt` (string, optional).
   - **Outputs:** `success` (boolean), `description` (string), `error` (string when failed). Same shape as describe-image; processing is synchronous (may take 1–2 minutes for several frames).

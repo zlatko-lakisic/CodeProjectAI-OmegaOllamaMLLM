@@ -4,12 +4,16 @@ Supports images and video (multimodal): for video, samples frames, describes eac
 then summarizes with a text model. Follows the same pattern as PythonSimple/detect_adapter.py.
 Inference runs in the Ollama server process; this module reports GPU capability for the dashboard.
 Video description runs synchronously; use conservative OLLAMA_VIDEO_MAX_FRAMES to avoid server timeouts.
+Also exposes an OpenAI-compatible chat/completions endpoint for LLM Vision (Home Assistant HACS).
 """
 from __future__ import annotations
 
+import base64
 import io
+import json
 import os
 import tempfile
+import uuid
 from pathlib import Path
 
 # CodeProject.AI SDK
@@ -116,6 +120,55 @@ def _is_video_bytes(data: bytes, path_or_suffix: str | Path | None) -> bool:
     return False
 
 
+def _parse_openai_messages(messages: list) -> tuple[bytes | None, str]:
+    """Extract first image (base64) and combined text prompt from OpenAI-format messages. Returns (image_bytes, prompt)."""
+    prompt_parts: list[str] = []
+    image_bytes: bytes | None = None
+    for msg in messages or []:
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content")
+        if isinstance(content, str):
+            prompt_parts.append(content)
+            continue
+        if isinstance(content, list):
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                if part.get("type") == "text":
+                    prompt_parts.append((part.get("text") or "").strip())
+                elif part.get("type") == "image_url":
+                    url = part.get("image_url")
+                    url_str = url.get("url") if isinstance(url, dict) else str(url)
+                    if url_str.startswith("data:") and ";base64," in url_str:
+                        b64 = url_str.split(";base64,", 1)[-1]
+                        try:
+                            image_bytes = base64.b64decode(b64)
+                            break
+                        except Exception:
+                            pass
+    prompt = " ".join(prompt_parts).strip() or "Describe this image in a few sentences."
+    return image_bytes, prompt
+
+
+def _openai_choices_response(content: str, model: str, finish_reason: str = "stop") -> JSON:
+    """Build OpenAI chat completions-style response for LLM Vision. Includes success for CodeProject.AI."""
+    return {
+        "success": True,
+        "id": f"chatcmpl-{uuid.uuid4().hex[:24]}",
+        "object": "chat.completion",
+        "choices": [
+            {
+                "message": {"role": "assistant", "content": content},
+                "finish_reason": finish_reason,
+                "index": 0,
+            }
+        ],
+        "model": model,
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+    }
+
+
 class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
     """Adapter for Ollama MultiModal: describe image or video, or answer prompt. By OmegaIT LLC.
     Inference runs in the Ollama server (separate process); GPU is used by Ollama when available.
@@ -152,9 +205,13 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
 
     def process(self, data: RequestData) -> JSON:
         cmd = (data.command or "").strip().lower()
-        if cmd not in ("describe-image", "describe-video"):
+        if cmd not in ("describe-image", "describe-video", "chat-completions"):
             self.report_error(None, __file__, f"Unknown command {data.command}")
-            return {"success": False, "error": f"Unknown command {data.command}. Use describe-image or describe-video.", "description": ""}
+            return {"success": False, "error": f"Unknown command {data.command}. Use describe-image, describe-video, or chat-completions.", "description": ""}
+
+        # OpenAI-compatible endpoint for LLM Vision (Home Assistant): JSON body with messages + optional model
+        if cmd == "chat-completions":
+            return self._process_chat_completions(data)
 
         try:
             prompt = data.get_value("prompt") or "Describe this image in a few sentences."
@@ -246,6 +303,45 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
             return {"success": False, "error": str(e), "description": ""}
         except Exception as e:
             return {"success": False, "error": str(e), "description": ""}
+
+    def _process_chat_completions(self, data: RequestData) -> JSON:
+        """Handle OpenAI-format chat/completions request (for LLM Vision). Returns OpenAI-style JSON."""
+        model = (data.get_value("model") or "omega-ollama").strip() or "omega-ollama"
+        messages = data.get_value("messages")
+        # CodeProject.AI may pass JSON body as key-value (messages, model) or as single body/request string
+        if messages is None:
+            for key in ("body", "request", "payload"):
+                body = data.get_value(key)
+                if body is None:
+                    continue
+                if isinstance(body, str):
+                    try:
+                        body = json.loads(body)
+                    except json.JSONDecodeError:
+                        continue
+                if isinstance(body, dict):
+                    messages = body.get("messages")
+                    if body.get("model"):
+                        model = body.get("model", model)
+                    break
+        if isinstance(messages, str):
+            try:
+                messages = json.loads(messages)
+            except json.JSONDecodeError:
+                messages = None
+        image_bytes, prompt = _parse_openai_messages(messages if isinstance(messages, list) else [])
+        if not image_bytes:
+            return _openai_choices_response(
+                "No image provided. Send a message with an image (image_url) for vision.",
+                model,
+            )
+        result = self._process_single_image(image_bytes, prompt)
+        if result.get("success"):
+            return _openai_choices_response(result.get("description", ""), model)
+        return _openai_choices_response(
+            result.get("error") or "Vision request failed.",
+            model,
+        )
 
     def _process_video(self, video_path: Path, prompt: str) -> JSON:
         """Sample frames, describe each with vision model, then summarize with text model."""

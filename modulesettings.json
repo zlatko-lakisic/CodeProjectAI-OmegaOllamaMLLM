@@ -125,6 +125,21 @@
             { "Name": "description", "Type": "String" },
             { "Name": "error", "Type": "String" }
           ]
+        },
+        {
+          "Name": "OpenAI chat completions (LLM Vision)",
+          "Route": "chat/completions",
+          "Method": "POST",
+          "Command": "chat-completions",
+          "Description": "OpenAI-compatible vision endpoint for LLM Vision (Home Assistant). Send JSON body with messages (image_url + text) and optional model.",
+          "Inputs": [
+            { "Name": "messages", "Type": "String", "Description": "JSON array of messages (OpenAI format)." },
+            { "Name": "model", "Type": "String", "Description": "Optional model name.", "DefaultValue": "omega-ollama" }
+          ],
+          "Outputs": [
+            { "Name": "choices", "Type": "String", "Description": "OpenAI-style choices array." },
+            { "Name": "model", "Type": "String", "Description": "Model used." }
+          ]
         }
       ]
     }
