@@ -68,7 +68,7 @@ If the module is running and Ollama has the moondream model, the self-test shoul
 
 ## Home Assistant: LLM Vision (HACS)
 
-This module exposes an **OpenAI-compatible** endpoint so [LLM Vision](https://github.com/valentinfrlch/ha-llmvision) can use CodeProject.AI directly—no extra containers or proxy.
+This module exposes an **OpenAI-compatible** endpoint so [LLM Vision](https://github.com/valentinfrlch/ha-llmvision) can use CodeProject.AI directly.
 
 1. **Ensure the module is running** (Ollama MultiModal LLM by OmegaIT enabled and started in the CodeProject.AI dashboard).
 
@@ -77,7 +77,7 @@ This module exposes an **OpenAI-compatible** endpoint so [LLM Vision](https://gi
    - **API key:** Leave empty or use any placeholder (this endpoint does not require a key).
    - **Model:** Any label (e.g. `omega-ollama`); the module uses your configured vision model.
 
-3. Use this provider in LLM Vision for camera snapshots, Frigate events, etc. Requests go straight to CodeProject.AI’s **Ollama MultiModal LLM** module.
+3. Use this provider in LLM Vision for camera snapshots, Frigate events, etc. Requests go to CodeProject.AI’s **Ollama MultiModal LLM** module.
 
 **Endpoint:** `POST /v1/chat/completions` — accepts JSON in OpenAI chat format (e.g. `messages` with `image_url` and text) and returns OpenAI-style `choices` with the vision description.
 

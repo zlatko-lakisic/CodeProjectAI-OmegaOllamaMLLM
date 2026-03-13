@@ -170,6 +170,91 @@ def _safe_repr(val, max_len: int = 200) -> str:
     return repr(val)[:max_len]
 
 
+def _sanitize_for_log(obj):
+    """Recursively copy a structure for logging; do not truncate base64 or other content."""
+    if obj is None:
+        return None
+    if isinstance(obj, bytes):
+        return f"<bytes len={len(obj)}>"
+    if isinstance(obj, str):
+        return obj
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_log(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_for_log(v) for v in obj]
+    return obj
+
+
+def _dump_full_request(data: RequestData) -> None:
+    """Log the entire request the module receives: command, all attributes, full payload (body sanitized)."""
+    lines = [
+        "",
+        "========== FULL REQUEST DUMP ==========",
+        f"command = {getattr(data, 'command', None)!r}",
+    ]
+    # All public attributes
+    for attr in sorted(dir(data)):
+        if attr.startswith("_"):
+            continue
+        try:
+            val = getattr(data, attr)
+            if callable(val):
+                lines.append(f"  {attr} = <callable {type(val).__name__}>")
+            elif isinstance(val, (dict, list)):
+                try:
+                    sanitized = _sanitize_for_log(val)
+                    lines.append(f"  {attr} = {json.dumps(sanitized, indent=2, default=repr)[:8000]}")
+                    if len(json.dumps(sanitized, default=repr)) > 8000:
+                        lines.append(f"  ... ({attr} truncated in log)")
+                except Exception as e:
+                    lines.append(f"  {attr} = <{type(val).__name__} serialize err: {e!r}>")
+            else:
+                lines.append(f"  {attr} = {_safe_repr(val)}")
+        except Exception as e:
+            lines.append(f"  {attr} = <getattr err: {e!r}>")
+    # get_value for common keys
+    lines.append("  --- get_value(...) ---")
+    for key in ("model", "messages", "body", "request", "payload", "requestBody", "content", "data", "raw", "input", "prompt"):
+        try:
+            v = data.get_value(key)
+            if v is not None:
+                if isinstance(v, (dict, list)):
+                    sanitized = _sanitize_for_log(v)
+                    lines.append(f"    get_value({key!r}) = {json.dumps(sanitized, indent=2, default=repr)[:4000]}")
+                else:
+                    lines.append(f"    get_value({key!r}) = {_safe_repr(v)}")
+            else:
+                lines.append(f"    get_value({key!r}) = None")
+        except Exception as e:
+            lines.append(f"    get_value({key!r}) = err: {e!r}")
+    # data.json() if present
+    lines.append("  --- data.json() ---")
+    try:
+        json_fn = getattr(data, "json", None)
+        if callable(json_fn):
+            parsed = json_fn()
+            if parsed is not None:
+                sanitized = _sanitize_for_log(parsed)
+                lines.append(json.dumps(sanitized, indent=2, default=repr)[:12000])
+            else:
+                lines.append("    None")
+        else:
+            lines.append(f"    json = {json_fn!r}")
+    except Exception as e:
+        lines.append(f"    error: {e!r}")
+    lines.append("========== END FULL REQUEST DUMP ==========")
+    lines.append("")
+    blob = "\n".join(lines)
+    print(blob)
+    try:
+        with open(_CHAT_DEBUG_LOG, "a", encoding="utf-8") as f:
+            f.write(f"\n{time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(blob)
+            f.flush()
+    except Exception as e:
+        print(f"[OmegaOllama] Failed to write full request dump to {_CHAT_DEBUG_LOG}: {e}")
+
+
 def _log_request_data(data: RequestData, prefix: str = "chat-completions request") -> None:
     """Log a summary of RequestData to debug file and stdout."""
     msg = _request_data_debug_string(data, prefix)
@@ -380,10 +465,23 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
 
     def _process_chat_completions(self, data: RequestData) -> JSON:
         """Handle OpenAI-format chat/completions request (for LLM Vision). Returns OpenAI-style JSON."""
-        _log_request_data(data, "chat-completions request (full dump)")
+        # Log the entire request including body (all attributes + payload + get_value + data.json())
+        _dump_full_request(data)
+        _log_request_data(data, "chat-completions request (summary)")
         model = "omega-ollama"
         messages = None
-        # CodeProject.AI Server: payload = {command, values, files, urlSegments}; request body is in payload["values"]
+        # Try data.json() first (SDK method that may return parsed request body)
+        json_fn = getattr(data, "json", None)
+        if callable(json_fn):
+            try:
+                data_json = json_fn()
+                if isinstance(data_json, dict):
+                    messages = data_json.get("messages") or data_json.get("Messages")
+                    if data_json.get("model"):
+                        model = str(data_json.get("model", model))
+            except Exception:
+                pass
+        # CodeProject.AI Server: payload = {command, values, files, urlSegments}; request body may be in payload["values"]
         payload = getattr(data, "payload", None)
         if isinstance(payload, dict):
             values = payload.get("values")
@@ -449,21 +547,6 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
                             model = body.get("model", model)
                 except json.JSONDecodeError:
                     pass
-        if messages is None:
-            json_fn = getattr(data, "json", None)
-            if callable(json_fn):
-                try:
-                    data_json = json_fn()
-                    if isinstance(data_json, dict):
-                        messages = data_json.get("messages") or data_json.get("Messages")
-                        if data_json.get("model"):
-                            model = str(data_json.get("model", model))
-                except Exception:
-                    pass
-            elif isinstance(json_fn, dict):
-                messages = json_fn.get("messages") or json_fn.get("Messages")
-                if json_fn.get("model"):
-                    model = str(json_fn.get("model", model))
         if messages is None:
             value_list = getattr(data, "value_list", None)
             if isinstance(value_list, (list, tuple)):
