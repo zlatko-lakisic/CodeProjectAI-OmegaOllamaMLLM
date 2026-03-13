@@ -315,12 +315,15 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
         model = (data.get_value("model") or "omega-ollama").strip() or "omega-ollama"
         messages = data.get_value("messages")
         # CodeProject.AI may pass JSON body as key-value (messages, model) or as single body/request string
+        body_keys = (
+            "body", "request", "payload", "requestBody", "content", "data", "json", "raw", "input"
+        )
         if messages is None:
-            for key in ("body", "request", "payload"):
+            for key in body_keys:
                 body = data.get_value(key)
                 if body is None:
                     continue
-                if isinstance(body, str):
+                if isinstance(body, str) and (body.strip().startswith("{") or body.strip().startswith("[")):
                     try:
                         body = json.loads(body)
                     except json.JSONDecodeError:
@@ -329,6 +332,22 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
                     messages = body.get("messages")
                     if body.get("model"):
                         model = body.get("model", model)
+                    if messages is not None:
+                        break
+        # If RequestData has a .values dict (or similar), scan for any JSON-like value containing "messages"
+        values_dict = getattr(data, "values", None)
+        if messages is None and isinstance(values_dict, dict):
+            for _k, v in values_dict.items():
+                if isinstance(v, str) and ("messages" in v or "image_url" in v):
+                    try:
+                        parsed = json.loads(v)
+                        if isinstance(parsed, dict) and "messages" in parsed:
+                            messages = parsed.get("messages")
+                            break
+                    except json.JSONDecodeError:
+                        pass
+                elif isinstance(v, list) and v and isinstance(v[0], dict) and "content" in str(v[0]):
+                    messages = v
                     break
         if isinstance(messages, str):
             try:
@@ -336,6 +355,20 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
             except json.JSONDecodeError:
                 messages = None
         image_bytes, prompt = _parse_openai_messages(messages if isinstance(messages, list) else [])
+        # Fallback: server may have converted JSON to form data (image file + prompt)
+        if not image_bytes:
+            image_input = data.get_image(0) if hasattr(data, "get_image") else None
+            if image_input is None and hasattr(data, "get_file_bytes"):
+                image_input = data.get_file_bytes(0)
+            if image_input is not None:
+                try:
+                    if isinstance(image_input, bytes):
+                        image_bytes = _load_image_bytes(image_input)
+                    else:
+                        image_bytes = _load_image_bytes(image_input)
+                    prompt = (data.get_value("prompt") or prompt or "Describe this image.").strip()
+                except Exception:
+                    image_bytes = None
         if not image_bytes:
             return _openai_choices_response(
                 "No image provided. Send a message with an image (image_url) for vision.",
