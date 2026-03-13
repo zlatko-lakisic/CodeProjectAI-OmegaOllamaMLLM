@@ -13,8 +13,12 @@ import io
 import json
 import os
 import tempfile
+import time
 import uuid
 from pathlib import Path
+
+# Debug log for chat-completions request dumps. Default /tmp works in Docker; set OMEGA_OLLAMA_DEBUG_LOG to override.
+_CHAT_DEBUG_LOG = os.environ.get("OMEGA_OLLAMA_DEBUG_LOG") or "/tmp/omega_ollama_chat_debug.log"
 
 # CodeProject.AI SDK
 from codeproject_ai_sdk import LogMethod, LogVerbosity, RequestData, ModuleOptions, ModuleRunner, JSON
@@ -167,9 +171,15 @@ def _safe_repr(val, max_len: int = 200) -> str:
 
 
 def _log_request_data(data: RequestData, prefix: str = "chat-completions request") -> None:
-    """Log a summary of RequestData to CodeProject.AI module log (info level)."""
+    """Log a summary of RequestData to debug file and stdout."""
     msg = _request_data_debug_string(data, prefix)
     print(msg)
+    try:
+        with open(_CHAT_DEBUG_LOG, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
+            f.flush()
+    except Exception as e:
+        print(f"[OmegaOllama] Failed to write debug log to {_CHAT_DEBUG_LOG}: {e}")
 
 
 def _request_data_debug_string(data: RequestData, prefix: str = "chat-completions") -> str:
@@ -416,10 +426,9 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
                 except Exception:
                     image_bytes = None
         if not image_bytes:
-            debug_line = _request_data_debug_string(data, "chat-completions debug")
             return _openai_choices_response(
-                "No image provided. Send a message with an image (image_url) for vision. "
-                + debug_line,
+                f"No image provided. Send a message with an image (image_url) for vision. "
+                f"Request dump written to: {_CHAT_DEBUG_LOG}",
                 model,
             )
         result = self._process_single_image(image_bytes, prompt)
