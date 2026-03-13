@@ -201,7 +201,11 @@ def _request_data_debug_string(data: RequestData, prefix: str = "chat-completion
     values_dict = getattr(data, "values", None)
     if isinstance(values_dict, dict):
         parts.append(f"values_keys={list(values_dict.keys())!r}")
-    parts.append(f"attr.payload={_safe_repr(getattr(data, 'payload', None))}")
+    pl = getattr(data, "payload", None)
+    if isinstance(pl, dict):
+        parts.append(f"payload_keys={list(pl.keys())!r}")
+    else:
+        parts.append(f"attr.payload={_safe_repr(pl)}")
     parts.append(f"attr.json={_safe_repr(getattr(data, 'json', None))}")
     vl = getattr(data, "value_list", None)
     parts.append(f"attr.value_list={type(vl).__name__ if vl is not None else None} len={len(vl) if vl is not None else 0}")
@@ -374,12 +378,20 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
         _log_request_data(data, "chat-completions request (full dump)")
         model = "omega-ollama"
         messages = None
-        # CodeProject.AI Server does not fill get_value() for JSON body; use RequestData.payload / .json / .value_list
+        # CodeProject.AI Server does not fill get_value() for JSON body; use RequestData.payload (dict with 4 keys)
         payload = getattr(data, "payload", None)
         if isinstance(payload, dict):
-            messages = payload.get("messages")
+            messages = payload.get("messages") or payload.get("Messages")
+            if not messages and len(payload) > 0:
+                for v in payload.values():
+                    if isinstance(v, list) and v and isinstance(v[0], dict):
+                        if "role" in v[0] or "content" in v[0]:
+                            messages = v
+                            break
             if payload.get("model"):
-                model = payload.get("model", model)
+                model = str(payload.get("model", model))
+            elif payload.get("Model"):
+                model = str(payload.get("Model", model))
         elif payload is not None:
             if isinstance(payload, bytes):
                 try:
@@ -396,11 +408,20 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
                 except json.JSONDecodeError:
                     pass
         if messages is None:
-            data_json = getattr(data, "json", None)
-            if isinstance(data_json, dict):
-                messages = data_json.get("messages")
-                if data_json.get("model"):
-                    model = data_json.get("model", model)
+            json_fn = getattr(data, "json", None)
+            if callable(json_fn):
+                try:
+                    data_json = json_fn()
+                    if isinstance(data_json, dict):
+                        messages = data_json.get("messages") or data_json.get("Messages")
+                        if data_json.get("model"):
+                            model = str(data_json.get("model", model))
+                except Exception:
+                    pass
+            elif isinstance(json_fn, dict):
+                messages = json_fn.get("messages") or json_fn.get("Messages")
+                if json_fn.get("model"):
+                    model = str(json_fn.get("model", model))
         if messages is None:
             value_list = getattr(data, "value_list", None)
             if isinstance(value_list, (list, tuple)):
