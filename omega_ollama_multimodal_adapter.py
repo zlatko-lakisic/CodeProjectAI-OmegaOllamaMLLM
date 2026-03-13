@@ -168,7 +168,13 @@ def _safe_repr(val, max_len: int = 200) -> str:
 
 def _log_request_data(data: RequestData, prefix: str = "chat-completions request") -> None:
     """Log a summary of RequestData to CodeProject.AI module log (info level)."""
-    lines = [f"[OmegaOllama] {prefix}:"]
+    msg = _request_data_debug_string(data, prefix)
+    print(msg)
+
+
+def _request_data_debug_string(data: RequestData, prefix: str = "chat-completions") -> str:
+    """Build a short debug summary of RequestData (for inclusion in API response or logs)."""
+    parts = [f"[{prefix}]"]
     keys_to_try = (
         "model", "messages", "body", "request", "payload", "requestBody",
         "content", "data", "json", "raw", "input", "prompt",
@@ -177,18 +183,17 @@ def _log_request_data(data: RequestData, prefix: str = "chat-completions request
         try:
             v = data.get_value(key)
             if v is not None:
-                lines.append(f"  get_value({key!r}) = {_safe_repr(v)}")
+                parts.append(f"{key}={_safe_repr(v)}")
+            else:
+                parts.append(f"{key}=None")
         except Exception as e:
-            lines.append(f"  get_value({key!r}) raised {e!r}")
+            parts.append(f"{key}=err:{e!r}")
     values_dict = getattr(data, "values", None)
     if isinstance(values_dict, dict):
-        lines.append(f"  data.values keys: {list(values_dict.keys())!r}")
-        for k, v in values_dict.items():
-            lines.append(f"    values[{k!r}] = {_safe_repr(v)}")
+        parts.append(f"values_keys={list(values_dict.keys())!r}")
     attrs = [a for a in dir(data) if not a.startswith("_")]
-    lines.append(f"  RequestData public attrs: {attrs!r}")
-    msg = "\n".join(lines)
-    print(msg)
+    parts.append(f"attrs={attrs!r}")
+    return " ".join(parts)
 
 
 def _openai_choices_response(content: str, model: str, finish_reason: str = "stop") -> JSON:
@@ -411,8 +416,10 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
                 except Exception:
                     image_bytes = None
         if not image_bytes:
+            debug_line = _request_data_debug_string(data, "chat-completions debug")
             return _openai_choices_response(
-                "No image provided. Send a message with an image (image_url) for vision.",
+                "No image provided. Send a message with an image (image_url) for vision. "
+                + debug_line,
                 model,
             )
         result = self._process_single_image(image_bytes, prompt)
