@@ -204,6 +204,11 @@ def _request_data_debug_string(data: RequestData, prefix: str = "chat-completion
     pl = getattr(data, "payload", None)
     if isinstance(pl, dict):
         parts.append(f"payload_keys={list(pl.keys())!r}")
+        vals = pl.get("values")
+        if isinstance(vals, dict):
+            parts.append(f"payload.values_keys={list(vals.keys())!r}")
+        elif isinstance(vals, (list, tuple)):
+            parts.append(f"payload.values_len={len(vals)} first={_safe_repr(vals[0]) if vals else None}")
     else:
         parts.append(f"attr.payload={_safe_repr(pl)}")
     parts.append(f"attr.json={_safe_repr(getattr(data, 'json', None))}")
@@ -378,20 +383,57 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
         _log_request_data(data, "chat-completions request (full dump)")
         model = "omega-ollama"
         messages = None
-        # CodeProject.AI Server does not fill get_value() for JSON body; use RequestData.payload (dict with 4 keys)
+        # CodeProject.AI Server: payload = {command, values, files, urlSegments}; request body is in payload["values"]
         payload = getattr(data, "payload", None)
         if isinstance(payload, dict):
-            messages = payload.get("messages") or payload.get("Messages")
-            if not messages and len(payload) > 0:
-                for v in payload.values():
-                    if isinstance(v, list) and v and isinstance(v[0], dict):
-                        if "role" in v[0] or "content" in v[0]:
+            values = payload.get("values")
+            if isinstance(values, dict):
+                messages = values.get("messages") or values.get("Messages")
+                if values.get("model"):
+                    model = str(values.get("model", model))
+                elif values.get("Model"):
+                    model = str(values.get("Model", model))
+                if not messages and len(values) > 0:
+                    for k, v in values.items():
+                        if isinstance(v, list) and v and isinstance(v[0], dict) and ("role" in v[0] or "content" in v[0]):
                             messages = v
                             break
-            if payload.get("model"):
-                model = str(payload.get("model", model))
-            elif payload.get("Model"):
-                model = str(payload.get("Model", model))
+                        if isinstance(v, str) and v.strip().startswith("[") and "role" in v:
+                            try:
+                                messages = json.loads(v)
+                                break
+                            except json.JSONDecodeError:
+                                pass
+            elif isinstance(values, (list, tuple)):
+                for item in values:
+                    if isinstance(item, (list, tuple)) and len(item) >= 2:
+                        k, v = item[0], item[1]
+                        if k == "messages" and isinstance(v, list) and v and isinstance(v[0], dict):
+                            messages = v
+                            break
+                        if k == "model" and v is not None:
+                            model = str(v)
+                        if k in ("body", "request") and isinstance(v, str) and v.strip().startswith("{"):
+                            try:
+                                body = json.loads(v)
+                                if isinstance(body, dict) and body.get("messages"):
+                                    messages = body.get("messages")
+                                    if body.get("model"):
+                                        model = str(body.get("model", model))
+                                    break
+                            except json.JSONDecodeError:
+                                pass
+            if messages is None:
+                messages = payload.get("messages") or payload.get("Messages")
+                if payload.get("model"):
+                    model = str(payload.get("model", model))
+                elif payload.get("Model"):
+                    model = str(payload.get("Model", model))
+                if not messages:
+                    for v in payload.values():
+                        if isinstance(v, list) and v and isinstance(v[0], dict) and ("role" in v[0] or "content" in v[0]):
+                            messages = v
+                            break
         elif payload is not None:
             if isinstance(payload, bytes):
                 try:
