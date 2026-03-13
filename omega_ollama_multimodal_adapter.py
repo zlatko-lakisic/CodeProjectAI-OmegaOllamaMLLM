@@ -151,6 +151,46 @@ def _parse_openai_messages(messages: list) -> tuple[bytes | None, str]:
     return image_bytes, prompt
 
 
+def _safe_repr(val, max_len: int = 200) -> str:
+    """Return a short safe repr for logging (no huge base64)."""
+    if val is None:
+        return "None"
+    if isinstance(val, bytes):
+        return f"<bytes len={len(val)}>"
+    if isinstance(val, str):
+        if "base64" in val.lower() or len(val) > max_len:
+            return f"<str len={len(val)} prefix={repr(val[:80])!s}>"
+        return repr(val)[:max_len]
+    if isinstance(val, (list, dict)):
+        return f"<{type(val).__name__} len={len(val)}>"
+    return repr(val)[:max_len]
+
+
+def _log_request_data(data: RequestData, prefix: str = "chat-completions request") -> None:
+    """Log a summary of RequestData to CodeProject.AI module log (info level)."""
+    lines = [f"[OmegaOllama] {prefix}:"]
+    keys_to_try = (
+        "model", "messages", "body", "request", "payload", "requestBody",
+        "content", "data", "json", "raw", "input", "prompt",
+    )
+    for key in keys_to_try:
+        try:
+            v = data.get_value(key)
+            if v is not None:
+                lines.append(f"  get_value({key!r}) = {_safe_repr(v)}")
+        except Exception as e:
+            lines.append(f"  get_value({key!r}) raised {e!r}")
+    values_dict = getattr(data, "values", None)
+    if isinstance(values_dict, dict):
+        lines.append(f"  data.values keys: {list(values_dict.keys())!r}")
+        for k, v in values_dict.items():
+            lines.append(f"    values[{k!r}] = {_safe_repr(v)}")
+    attrs = [a for a in dir(data) if not a.startswith("_")]
+    lines.append(f"  RequestData public attrs: {attrs!r}")
+    msg = "\n".join(lines)
+    print(msg)
+
+
 def _openai_choices_response(content: str, model: str, finish_reason: str = "stop") -> JSON:
     """Build OpenAI chat completions-style response for LLM Vision. Includes success for CodeProject.AI."""
     return {
@@ -312,6 +352,7 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
 
     def _process_chat_completions(self, data: RequestData) -> JSON:
         """Handle OpenAI-format chat/completions request (for LLM Vision). Returns OpenAI-style JSON."""
+        _log_request_data(data, "chat-completions request (full dump)")
         model = (data.get_value("model") or "omega-ollama").strip() or "omega-ollama"
         messages = data.get_value("messages")
         # CodeProject.AI may pass JSON body as key-value (messages, model) or as single body/request string
