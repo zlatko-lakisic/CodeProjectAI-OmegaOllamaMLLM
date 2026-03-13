@@ -201,6 +201,10 @@ def _request_data_debug_string(data: RequestData, prefix: str = "chat-completion
     values_dict = getattr(data, "values", None)
     if isinstance(values_dict, dict):
         parts.append(f"values_keys={list(values_dict.keys())!r}")
+    parts.append(f"attr.payload={_safe_repr(getattr(data, 'payload', None))}")
+    parts.append(f"attr.json={_safe_repr(getattr(data, 'json', None))}")
+    vl = getattr(data, "value_list", None)
+    parts.append(f"attr.value_list={type(vl).__name__ if vl is not None else None} len={len(vl) if vl is not None else 0}")
     attrs = [a for a in dir(data) if not a.startswith("_")]
     parts.append(f"attrs={attrs!r}")
     return " ".join(parts)
@@ -368,13 +372,63 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
     def _process_chat_completions(self, data: RequestData) -> JSON:
         """Handle OpenAI-format chat/completions request (for LLM Vision). Returns OpenAI-style JSON."""
         _log_request_data(data, "chat-completions request (full dump)")
-        model = (data.get_value("model") or "omega-ollama").strip() or "omega-ollama"
-        messages = data.get_value("messages")
-        # CodeProject.AI may pass JSON body as key-value (messages, model) or as single body/request string
-        body_keys = (
-            "body", "request", "payload", "requestBody", "content", "data", "json", "raw", "input"
-        )
+        model = "omega-ollama"
+        messages = None
+        # CodeProject.AI Server does not fill get_value() for JSON body; use RequestData.payload / .json / .value_list
+        payload = getattr(data, "payload", None)
+        if isinstance(payload, dict):
+            messages = payload.get("messages")
+            if payload.get("model"):
+                model = payload.get("model", model)
+        elif payload is not None:
+            if isinstance(payload, bytes):
+                try:
+                    payload = payload.decode("utf-8")
+                except Exception:
+                    payload = None
+            if isinstance(payload, str) and (payload.strip().startswith("{") or payload.strip().startswith("[")):
+                try:
+                    body = json.loads(payload)
+                    if isinstance(body, dict):
+                        messages = body.get("messages")
+                        if body.get("model"):
+                            model = body.get("model", model)
+                except json.JSONDecodeError:
+                    pass
         if messages is None:
+            data_json = getattr(data, "json", None)
+            if isinstance(data_json, dict):
+                messages = data_json.get("messages")
+                if data_json.get("model"):
+                    model = data_json.get("model", model)
+        if messages is None:
+            value_list = getattr(data, "value_list", None)
+            if isinstance(value_list, (list, tuple)):
+                for item in value_list:
+                    if isinstance(item, (list, tuple)) and len(item) >= 2 and item[0] == "payload":
+                        raw = item[1]
+                        if isinstance(raw, bytes):
+                            try:
+                                raw = raw.decode("utf-8")
+                            except Exception:
+                                continue
+                        if isinstance(raw, str) and raw.strip().startswith("{"):
+                            try:
+                                body = json.loads(raw)
+                                if isinstance(body, dict):
+                                    messages = body.get("messages")
+                                    if body.get("model"):
+                                        model = body.get("model", model)
+                                    break
+                            except json.JSONDecodeError:
+                                pass
+                        break
+        if messages is None:
+            model = (data.get_value("model") or model).strip() or model
+            messages = data.get_value("messages")
+            body_keys = (
+                "body", "request", "payload", "requestBody", "content", "data", "json", "raw", "input"
+            )
             for key in body_keys:
                 body = data.get_value(key)
                 if body is None:
@@ -390,7 +444,6 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
                         model = body.get("model", model)
                     if messages is not None:
                         break
-        # If RequestData has a .values dict (or similar), scan for any JSON-like value containing "messages"
         values_dict = getattr(data, "values", None)
         if messages is None and isinstance(values_dict, dict):
             for _k, v in values_dict.items():
