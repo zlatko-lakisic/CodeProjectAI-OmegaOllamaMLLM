@@ -211,7 +211,13 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
 
         # OpenAI-compatible endpoint for LLM Vision (Home Assistant): JSON body with messages + optional model
         if cmd == "chat-completions":
-            return self._process_chat_completions(data)
+            try:
+                return self._process_chat_completions(data)
+            except Exception as e:
+                return _openai_choices_response(
+                    f"Error processing request: {e}",
+                    (data.get_value("model") or "omega-ollama").strip() or "omega-ollama",
+                )
 
         try:
             prompt = data.get_value("prompt") or "Describe this image in a few sentences."
