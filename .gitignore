@@ -11,6 +11,8 @@ env/
 
 # CodeProject.AI module venv / runtime (created by setup)
 bin/
+ollama/
+models/
 
 # IDE / OS
 .idea/
