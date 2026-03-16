@@ -45,53 +45,53 @@ if [ "$(uname -s)" = "Linux" ] && { [ ! -x "$OLLAMA_INSTALL_DIR/bin/ollama" ] &&
     writeLine "  [FAIL] curl is required. Install curl and re-run setup." "red"
     writeLine "  Continuing with Python dependencies; install Ollama manually from https://ollama.com" "yellow"
   else
-    # Ensure tar can extract .zst (zstd). CodeProject.AI Docker images often have it.
-    if ! tar --help 2>/dev/null | grep -q zstd; then
-      if command -v zstd &>/dev/null; then
-        ZSTD_AVAILABLE=1
-      else
-        writeLine "  Installing zstd for tarball extraction..." "cyan"
-        if command -v apt-get &>/dev/null; then
-          apt-get update -qq 2>/dev/null || true
-          apt-get install -y -qq zstd 2>/dev/null || true
-        fi
+    # .tar.zst requires zstd to decompress before tar; pipe breaks (curl 23) if tar gets compressed bytes
+    if ! command -v zstd &>/dev/null; then
+      writeLine "  Installing zstd for tarball extraction..." "cyan"
+      if command -v apt-get &>/dev/null; then
+        apt-get update -qq 2>/dev/null || true
+        apt-get install -y -qq zstd 2>/dev/null || true
       fi
     fi
-    mkdir -p "$OLLAMA_INSTALL_DIR"
-    cd "$OLLAMA_INSTALL_DIR"
-    # Manual install: download and extract to module dir (no sudo)
-    # https://docs.ollama.com/linux — "Download and extract the package"
-    TARBALL="ollama-linux-${OLLAMA_ARCH}.tar.zst"
-    URL="https://ollama.com/download/${TARBALL}"
-    writeLine "  Downloading $URL ..." "cyan"
-    if curl -fsSL -o - "$URL" | tar -x 2>/dev/null; then
-      # AMD ROCm (optional, per https://docs.ollama.com/linux)
-      if [ "${OLLAMA_USE_ROCM:-0}" = "1" ] && [ "$OLLAMA_ARCH" = "amd64" ]; then
-        writeLine "  Downloading Ollama ROCm libraries for AMD GPU..." "cyan"
-        curl -fsSL -o - "https://ollama.com/download/ollama-linux-amd64-rocm.tar.zst" | tar -x 2>/dev/null || true
-      fi
-      # Tarball may have bin/ollama, usr/bin/ollama, or a single top-level dir
-      if [ -f "$OLLAMA_INSTALL_DIR/bin/ollama" ]; then
-        chmod +x "$OLLAMA_INSTALL_DIR/bin/ollama"
-      elif [ -f "$OLLAMA_INSTALL_DIR/usr/bin/ollama" ]; then
-        chmod +x "$OLLAMA_INSTALL_DIR/usr/bin/ollama"
-      else
-        FOUND=$(find "$OLLAMA_INSTALL_DIR" -maxdepth 4 -type f -name ollama 2>/dev/null | head -1)
-        if [ -n "$FOUND" ]; then
-          chmod +x "$FOUND"
-          mkdir -p "$OLLAMA_INSTALL_DIR/bin"
-          cp "$FOUND" "$OLLAMA_INSTALL_DIR/bin/ollama"
-        fi
-      fi
-      if [ -x "$OLLAMA_INSTALL_DIR/bin/ollama" ] || [ -x "$OLLAMA_INSTALL_DIR/usr/bin/ollama" ]; then
-        writeLine "  [OK] Ollama installed into module folder: $OLLAMA_INSTALL_DIR" "green"
-      else
-        writeLine "  [WARN] Extract may have failed; ollama binary not found. Install manually from https://ollama.com" "yellow"
-      fi
+    if ! command -v zstd &>/dev/null; then
+      writeLine "  [FAIL] zstd is required to extract Ollama tarball. Install zstd and re-run." "red"
+      writeLine "  apt-get install -y zstd" "yellow"
     else
-      writeLine "  [WARN] Download or extract failed. Install Ollama manually from https://ollama.com and ensure it is in PATH." "yellow"
+      mkdir -p "$OLLAMA_INSTALL_DIR"
+      cd "$OLLAMA_INSTALL_DIR"
+      # Manual install: download, decompress with zstd, extract (per https://docs.ollama.com/linux)
+      TARBALL="ollama-linux-${OLLAMA_ARCH}.tar.zst"
+      URL="https://ollama.com/download/${TARBALL}"
+      writeLine "  Downloading $URL ..." "cyan"
+      if curl -fsSL "$URL" | zstd -d | tar -x; then
+        # AMD ROCm (optional, per https://docs.ollama.com/linux)
+        if [ "${OLLAMA_USE_ROCM:-0}" = "1" ] && [ "$OLLAMA_ARCH" = "amd64" ]; then
+          writeLine "  Downloading Ollama ROCm libraries for AMD GPU..." "cyan"
+          curl -fsSL "https://ollama.com/download/ollama-linux-amd64-rocm.tar.zst" | zstd -d | tar -x
+        fi
+        # Tarball may have bin/ollama, usr/bin/ollama, or a single top-level dir
+        if [ -f "$OLLAMA_INSTALL_DIR/bin/ollama" ]; then
+          chmod +x "$OLLAMA_INSTALL_DIR/bin/ollama"
+        elif [ -f "$OLLAMA_INSTALL_DIR/usr/bin/ollama" ]; then
+          chmod +x "$OLLAMA_INSTALL_DIR/usr/bin/ollama"
+        else
+          FOUND=$(find "$OLLAMA_INSTALL_DIR" -maxdepth 4 -type f -name ollama 2>/dev/null | head -1)
+          if [ -n "$FOUND" ]; then
+            chmod +x "$FOUND"
+            mkdir -p "$OLLAMA_INSTALL_DIR/bin"
+            cp "$FOUND" "$OLLAMA_INSTALL_DIR/bin/ollama"
+          fi
+        fi
+        if [ -x "$OLLAMA_INSTALL_DIR/bin/ollama" ] || [ -x "$OLLAMA_INSTALL_DIR/usr/bin/ollama" ]; then
+          writeLine "  [OK] Ollama installed into module folder: $OLLAMA_INSTALL_DIR" "green"
+        else
+          writeLine "  [WARN] Extract may have failed; ollama binary not found. Install manually from https://ollama.com" "yellow"
+        fi
+      else
+        writeLine "  [WARN] Download or extract failed. Install Ollama manually from https://ollama.com and ensure it is in PATH." "yellow"
+      fi
+      cd "$MODULE_DIR"
     fi
-    cd "$MODULE_DIR"
   fi
 fi
 
