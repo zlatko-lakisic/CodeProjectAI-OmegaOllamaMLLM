@@ -63,11 +63,11 @@ if [ "$(uname -s)" = "Linux" ] && { [ ! -x "$OLLAMA_INSTALL_DIR/bin/ollama" ] &&
       TARBALL="ollama-linux-${OLLAMA_ARCH}.tar.zst"
       URL="https://ollama.com/download/${TARBALL}"
       writeLine "  Downloading $URL ..." "cyan"
-      if curl -fsSL "$URL" | zstd -d | tar -x; then
+      if curl -fL --progress-bar "$URL" | zstd -d | tar -x; then
         # AMD ROCm (optional, per https://docs.ollama.com/linux)
         if [ "${OLLAMA_USE_ROCM:-0}" = "1" ] && [ "$OLLAMA_ARCH" = "amd64" ]; then
           writeLine "  Downloading Ollama ROCm libraries for AMD GPU..." "cyan"
-          curl -fsSL "https://ollama.com/download/ollama-linux-amd64-rocm.tar.zst" | zstd -d | tar -x
+          curl -fL --progress-bar "https://ollama.com/download/ollama-linux-amd64-rocm.tar.zst" | zstd -d | tar -x
         fi
         # Tarball may have bin/ollama, usr/bin/ollama, or a single top-level dir
         if [ -f "$OLLAMA_INSTALL_DIR/bin/ollama" ]; then
