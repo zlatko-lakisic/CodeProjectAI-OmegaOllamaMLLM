@@ -8,7 +8,34 @@ if [ "$1" != "install" ]; then
   exit 0
 fi
 
-MODULE_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Resolve module dir: where this script lives (so Ollama installs in module/ollama, not /app/ollama).
+# When CodeProject.AI runs "sh install.sh install" from /app, $0 can be "install.sh" so dirname $0 + pwd gives /app.
+# We detect the real module dir by checking for omega_ollama_multimodal_adapter.py or the standard path.
+_resolve_module_dir() {
+  local script_path="$1"
+  local try_dir
+  try_dir="$(cd "$(dirname "$script_path")" 2>/dev/null && pwd)"
+  if [ -n "$try_dir" ] && [ -f "$try_dir/omega_ollama_multimodal_adapter.py" ]; then
+    echo "$try_dir"
+    return
+  fi
+  if command -v realpath >/dev/null 2>&1; then
+    try_dir="$(dirname "$(realpath "$script_path" 2>/dev/null)" 2>/dev/null)"
+    if [ -n "$try_dir" ] && [ -f "$try_dir/omega_ollama_multimodal_adapter.py" ]; then
+      echo "$try_dir"
+      return
+    fi
+  fi
+  if [ -f "/app/modules/OmegaOllamaMultiModalLLM/omega_ollama_multimodal_adapter.py" ]; then
+    echo "/app/modules/OmegaOllamaMultiModalLLM"
+    return
+  fi
+  echo "$try_dir"
+}
+MODULE_DIR="${OMEGA_OLLAMA_MODULE_DIR:-$( _resolve_module_dir "$0" )}"
+if [ -z "$MODULE_DIR" ]; then
+  MODULE_DIR="$(cd "$(dirname "$0")" && pwd)"
+fi
 OLLAMA_INSTALL_DIR="${OLLAMA_INSTALL_DIR:-$MODULE_DIR/ollama}"
 OLLAMA_MODELS_DIR="${OLLAMA_MODELS_DIR:-$MODULE_DIR/models}"
 

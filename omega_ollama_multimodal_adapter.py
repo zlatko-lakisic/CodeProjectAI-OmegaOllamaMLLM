@@ -12,7 +12,9 @@ import base64
 import io
 import json
 import os
+import subprocess
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
@@ -31,6 +33,61 @@ except ImportError:
 
 # Config (overridable via env / ModuleOptions)
 MAX_IMAGE_SIZE = 1024
+OLLAMA_STARTUP_WAIT_SEC = 15  # Max seconds to wait for Ollama to become reachable after starting
+
+
+def _ollama_reachable() -> bool:
+    """Return True if the Ollama server is reachable."""
+    try:
+        ollama.list()
+        return True
+    except Exception:
+        return False
+
+
+def _module_ollama_paths() -> tuple[Path | None, Path | None]:
+    """Return (ollama_bin_path, models_dir) for Ollama installed in this module folder, or (None, None)."""
+    module_dir = Path(__file__).resolve().parent
+    install_dir = module_dir / "ollama"
+    models_dir = module_dir / "models"
+    for candidate in (install_dir / "bin" / "ollama", install_dir / "usr" / "bin" / "ollama"):
+        if candidate.exists() and os.access(candidate, os.X_OK):
+            return (candidate, models_dir)
+    return (None, None)
+
+
+def _start_module_ollama(ollama_bin: Path, models_dir: Path) -> bool:
+    """Start Ollama from the module folder in the background. Return True if started without error."""
+    env = {**os.environ, "OLLAMA_MODELS": str(models_dir)}
+    try:
+        subprocess.Popen(
+            [str(ollama_bin), "serve"],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _ensure_ollama_running() -> None:
+    """If Ollama is not reachable, try to start the module's Ollama install and wait until it is up."""
+    if _ollama_reachable():
+        return
+    ollama_bin, models_dir = _module_ollama_paths()
+    if ollama_bin is None or models_dir is None:
+        return
+    if not _start_module_ollama(ollama_bin, models_dir):
+        return
+    for _ in range(OLLAMA_STARTUP_WAIT_SEC):
+        time.sleep(1)
+        if _ollama_reachable():
+            return
+    return
+
+
 VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 VIDEO_SUMMARY_PROMPT = (
     "Summarize what happens in this video in up to three sentences. "
@@ -202,6 +259,9 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
             self.can_use_GPU = False
             self.inference_device = "CPU"
             self.inference_library = ""
+
+        # Ensure Ollama is running: if not reachable, start the module's Ollama (if installed in module folder)
+        _ensure_ollama_running()
 
     def process(self, data: RequestData) -> JSON:
         cmd = (data.command or "").strip().lower()
