@@ -9,8 +9,9 @@ Plugin for [CodeProject.AI Server](https://www.codeproject.com/ai/) that uses **
 
 - **CodeProject.AI Server** installed and running.
 - **Ollama** installed and running on the same machine (or reachable at `OLLAMA_HOST`).  
-  - Install from [ollama.com](https://ollama.com).
-- The **moondream** model pulled in Ollama (the installer can do this automatically if Ollama is in PATH).  
+  - **Linux / Docker:** The installer can install Ollama **into the module folder** (per [manual install](https://docs.ollama.com/linux)) so it persists when the module lives on a volume. Binary: `module_dir/ollama/bin/ollama`; models: `module_dir/models`. Set `OLLAMA_MODELS` to the module’s `models` folder when starting Ollama at runtime.
+  - **Windows:** The installer can install the [standalone CLI](https://docs.ollama.com/windows) (ollama-windows-amd64.zip) into the module folder (`module_dir\ollama`); models go to `module_dir\models`. Otherwise install from [ollama.com](https://ollama.com) and ensure `ollama` is in PATH.
+- The **moondream** model pulled in Ollama (the installer does this automatically when Ollama is available).  
   For **video**, the same vision model is used to describe frames and to summarize; no second model is required. Optionally set **OLLAMA_SUMMARY_MODEL** to a different model (e.g. `llama3.2`) and run `ollama pull llama3.2` if you prefer a separate summary model.
 
 ## Installation
@@ -29,14 +30,16 @@ Plugin for [CodeProject.AI Server](https://www.codeproject.com/ai/) that uses **
      (Or run the main Server setup from the AI folder if it installs all modules.)
 
 3. The installer will:
+   - **Linux:** If Ollama is not in the module folder, download and extract Ollama into `module_dir/ollama` (manual install per [docs.ollama.com/linux](https://docs.ollama.com/linux)); models go to `module_dir/models`. Optional: set `OLLAMA_USE_ROCM=1` for AMD GPU before install.
    - Create a Python virtual environment for the module (if needed).
    - Install dependencies from `requirements.txt` (ollama, Pillow, CodeProject-AI-SDK).
-   - If Ollama is in PATH, run `ollama pull moondream`.
+   - Start Ollama if needed and run `ollama pull moondream` (and `ollama pull llama3.2` for video).
 
-4. If Ollama is not in PATH during install, pull the model manually:
+4. **At runtime (Linux/Docker):** If Ollama was installed into the module folder, start it with the module’s models dir so models persist:
    ```bash
-   ollama pull moondream
+   OLLAMA_MODELS="$(pwd)/models" ./ollama/bin/ollama serve
    ```
+   (Run from the module directory, or set `OLLAMA_MODELS` to the module’s `models` path.) If Ollama is in system PATH, just ensure it is running and `ollama pull moondream` has been run.
 
 5. Enable and start the **Ollama MultiModal LLM by OmegaIT** module in the CodeProject.AI dashboard.
 

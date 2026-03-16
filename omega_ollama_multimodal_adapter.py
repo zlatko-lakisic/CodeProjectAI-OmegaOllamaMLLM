@@ -13,12 +13,8 @@ import io
 import json
 import os
 import tempfile
-import time
 import uuid
 from pathlib import Path
-
-# Debug log for chat-completions request dumps. Default /tmp works in Docker; set OMEGA_OLLAMA_DEBUG_LOG to override.
-_CHAT_DEBUG_LOG = os.environ.get("OMEGA_OLLAMA_DEBUG_LOG") or "/tmp/omega_ollama_chat_debug.log"
 
 # CodeProject.AI SDK
 from codeproject_ai_sdk import LogMethod, LogVerbosity, RequestData, ModuleOptions, ModuleRunner, JSON
@@ -153,155 +149,6 @@ def _parse_openai_messages(messages: list) -> tuple[bytes | None, str]:
                             pass
     prompt = " ".join(prompt_parts).strip() or "Describe this image in a few sentences."
     return image_bytes, prompt
-
-
-def _safe_repr(val, max_len: int = 200) -> str:
-    """Return a short safe repr for logging (no huge base64)."""
-    if val is None:
-        return "None"
-    if isinstance(val, bytes):
-        return f"<bytes len={len(val)}>"
-    if isinstance(val, str):
-        if "base64" in val.lower() or len(val) > max_len:
-            return f"<str len={len(val)} prefix={repr(val[:80])!s}>"
-        return repr(val)[:max_len]
-    if isinstance(val, (list, dict)):
-        return f"<{type(val).__name__} len={len(val)}>"
-    return repr(val)[:max_len]
-
-
-def _sanitize_for_log(obj):
-    """Recursively copy a structure for logging; do not truncate base64 or other content."""
-    if obj is None:
-        return None
-    if isinstance(obj, bytes):
-        return f"<bytes len={len(obj)}>"
-    if isinstance(obj, str):
-        return obj
-    if isinstance(obj, dict):
-        return {k: _sanitize_for_log(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_sanitize_for_log(v) for v in obj]
-    return obj
-
-
-def _dump_full_request(data: RequestData) -> None:
-    """Log the entire request the module receives: command, all attributes, full payload (body sanitized)."""
-    lines = [
-        "",
-        "========== FULL REQUEST DUMP ==========",
-        f"command = {getattr(data, 'command', None)!r}",
-    ]
-    # All public attributes
-    for attr in sorted(dir(data)):
-        if attr.startswith("_"):
-            continue
-        try:
-            val = getattr(data, attr)
-            if callable(val):
-                lines.append(f"  {attr} = <callable {type(val).__name__}>")
-            elif isinstance(val, (dict, list)):
-                try:
-                    sanitized = _sanitize_for_log(val)
-                    lines.append(f"  {attr} = {json.dumps(sanitized, indent=2, default=repr)[:8000]}")
-                    if len(json.dumps(sanitized, default=repr)) > 8000:
-                        lines.append(f"  ... ({attr} truncated in log)")
-                except Exception as e:
-                    lines.append(f"  {attr} = <{type(val).__name__} serialize err: {e!r}>")
-            else:
-                lines.append(f"  {attr} = {_safe_repr(val)}")
-        except Exception as e:
-            lines.append(f"  {attr} = <getattr err: {e!r}>")
-    # get_value for common keys
-    lines.append("  --- get_value(...) ---")
-    for key in ("model", "messages", "body", "request", "payload", "requestBody", "content", "data", "raw", "input", "prompt"):
-        try:
-            v = data.get_value(key)
-            if v is not None:
-                if isinstance(v, (dict, list)):
-                    sanitized = _sanitize_for_log(v)
-                    lines.append(f"    get_value({key!r}) = {json.dumps(sanitized, indent=2, default=repr)[:4000]}")
-                else:
-                    lines.append(f"    get_value({key!r}) = {_safe_repr(v)}")
-            else:
-                lines.append(f"    get_value({key!r}) = None")
-        except Exception as e:
-            lines.append(f"    get_value({key!r}) = err: {e!r}")
-    # data.json() if present
-    lines.append("  --- data.json() ---")
-    try:
-        json_fn = getattr(data, "json", None)
-        if callable(json_fn):
-            parsed = json_fn()
-            if parsed is not None:
-                sanitized = _sanitize_for_log(parsed)
-                lines.append(json.dumps(sanitized, indent=2, default=repr)[:12000])
-            else:
-                lines.append("    None")
-        else:
-            lines.append(f"    json = {json_fn!r}")
-    except Exception as e:
-        lines.append(f"    error: {e!r}")
-    lines.append("========== END FULL REQUEST DUMP ==========")
-    lines.append("")
-    blob = "\n".join(lines)
-    print(blob)
-    try:
-        with open(_CHAT_DEBUG_LOG, "a", encoding="utf-8") as f:
-            f.write(f"\n{time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(blob)
-            f.flush()
-    except Exception as e:
-        print(f"[OmegaOllama] Failed to write full request dump to {_CHAT_DEBUG_LOG}: {e}")
-
-
-def _log_request_data(data: RequestData, prefix: str = "chat-completions request") -> None:
-    """Log a summary of RequestData to debug file and stdout."""
-    msg = _request_data_debug_string(data, prefix)
-    print(msg)
-    try:
-        with open(_CHAT_DEBUG_LOG, "a", encoding="utf-8") as f:
-            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
-            f.flush()
-    except Exception as e:
-        print(f"[OmegaOllama] Failed to write debug log to {_CHAT_DEBUG_LOG}: {e}")
-
-
-def _request_data_debug_string(data: RequestData, prefix: str = "chat-completions") -> str:
-    """Build a short debug summary of RequestData (for inclusion in API response or logs)."""
-    parts = [f"[{prefix}]"]
-    keys_to_try = (
-        "model", "messages", "body", "request", "payload", "requestBody",
-        "content", "data", "json", "raw", "input", "prompt",
-    )
-    for key in keys_to_try:
-        try:
-            v = data.get_value(key)
-            if v is not None:
-                parts.append(f"{key}={_safe_repr(v)}")
-            else:
-                parts.append(f"{key}=None")
-        except Exception as e:
-            parts.append(f"{key}=err:{e!r}")
-    values_dict = getattr(data, "values", None)
-    if isinstance(values_dict, dict):
-        parts.append(f"values_keys={list(values_dict.keys())!r}")
-    pl = getattr(data, "payload", None)
-    if isinstance(pl, dict):
-        parts.append(f"payload_keys={list(pl.keys())!r}")
-        vals = pl.get("values")
-        if isinstance(vals, dict):
-            parts.append(f"payload.values_keys={list(vals.keys())!r}")
-        elif isinstance(vals, (list, tuple)):
-            parts.append(f"payload.values_len={len(vals)} first={_safe_repr(vals[0]) if vals else None}")
-    else:
-        parts.append(f"attr.payload={_safe_repr(pl)}")
-    parts.append(f"attr.json={_safe_repr(getattr(data, 'json', None))}")
-    vl = getattr(data, "value_list", None)
-    parts.append(f"attr.value_list={type(vl).__name__ if vl is not None else None} len={len(vl) if vl is not None else 0}")
-    attrs = [a for a in dir(data) if not a.startswith("_")]
-    parts.append(f"attrs={attrs!r}")
-    return " ".join(parts)
 
 
 def _openai_choices_response(content: str, model: str, finish_reason: str = "stop") -> JSON:
@@ -465,9 +312,6 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
 
     def _process_chat_completions(self, data: RequestData) -> JSON:
         """Handle OpenAI-format chat/completions request (for LLM Vision). Returns OpenAI-style JSON."""
-        # Log the entire request including body (all attributes + payload + get_value + data.json())
-        _dump_full_request(data)
-        _log_request_data(data, "chat-completions request (summary)")
         model = "omega-ollama"
         messages = None
         # Try data.json() first (SDK method that may return parsed request body)
@@ -626,8 +470,7 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
                     image_bytes = None
         if not image_bytes:
             return _openai_choices_response(
-                f"No image provided. Send a message with an image (image_url) for vision. "
-                f"Request dump written to: {_CHAT_DEBUG_LOG}",
+                "No image provided. Send a message with an image (image_url) for vision.",
                 model,
             )
         result = self._process_single_image(image_bytes, prompt)
@@ -725,8 +568,6 @@ class OmegaOllamaMultiModalLLMAdapter(ModuleRunner):
                 result = self.process(request_data)
                 success = result.get("success", False)
                 msg = "OmegaOllamaMultiModal LLM describe test successful" if success else (result.get("error") or "Self-test failed")
-                if self.log_verbosity == LogVerbosity.Loud:
-                    print(f"Info: Self-test for {self.module_id}. Success: {success}")
                 return {"success": success, "message": msg}
             finally:
                 try:
