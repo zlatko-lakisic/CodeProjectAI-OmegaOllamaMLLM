@@ -1,5 +1,7 @@
 # CodeProject.AI – Ollama MultiModal LLM by OmegaIT
 
+![Project Banner](banner.png)
+
 Plugin for [CodeProject.AI Server](https://www.codeproject.com/ai/) that uses **Ollama** for image and video description and visual question answering. Supports multiple vision models (default: Moondream) and video via frame sampling + summarization.
 
 **Author:** Zlatko Lakisic · **OmegaIT LLC** · [omega-it.solutions](https://omega-it.solutions)  
